@@ -15,14 +15,6 @@
 
 Contiki-NG is an open-source, cross-platform operating system for Next-Generation IoT devices. It focuses on dependable (secure and reliable) low-power communication and standard protocols, such as IPv6/6LoWPAN, 6TiSCH, RPL, and CoAP. Contiki-NG comes with extensive documentation, tutorials, a roadmap, release cycle, and well-defined development flow for smooth integration of community contributions.
 
-Unless explicitly stated otherwise, Contiki-NG sources are distributed under
-the terms of the [3-clause BSD license](LICENSE.md). This license gives
-everyone the right to use and distribute the code, either in binary or
-source code format, as long as the copyright license is retained in
-the source code.
-
-Contiki-NG started as a fork of the Contiki OS and retains some of its original features.
-
 Find out more:
 
 * GitHub repository: https://github.com/contiki-ng/contiki-ng
@@ -30,9 +22,20 @@ Find out more:
 * List of releases and changes: https://github.com/contiki-ng/contiki-ng/releases
 * Web site: http://contiki-ng.org
 
-Engage with the community:
+Paper → file mapping (every component accounted for)
 
-* Discussions on GitHub: https://github.com/contiki-ng/contiki-ng/discussions
-* Contiki-NG tag on Stack Overflow: https://stackoverflow.com/questions/tagged/contiki-ng
-* Gitter: https://gitter.im/contiki-ng
-* Twitter: https://twitter.com/contiki_ng
+1. Zone 1 shared cell hash T_b, C_b = hash(EUI64(P)+ASFN) - os/services/orchestra/orchestra-rule-ease.c (ease_shared_timeslot/choff)    
+2. Zone 2 dedicated cell hash T_slot,C_ch = α·hash(P+C)+i+ASFN - orchestra-rule-ease.c (ease_dedicated_timeslot/choff)       
+3. Two-zone slotframe split SF = SF_s + SF_x, equal halves - orchestra-rule-ease.c (EASE_SHARED_LEN, EASE_DEDICATED_LEN)   
+4. CUSUM predictor z, S, μ, c=round([μ]₊) - os/net/mac/tsch/tsch-schedule.c (ease_cusum_step, ease_cusum_recalculate) 
+5. Game-theoretic allocation - os/net/mac/tsch/tsch-packet.c (ease_game_recompute) 
+6. Token bucket tokens=max/min(qᵢ,Pᵢ) + congestion ACK eq 17, Sec. G - tsch-packet.c (ease_token_consume) + tsch-slot-operation.c (NACK signaling)
+7. Demand counting Dₜ (uplink Tx delivered, Rx from child) - os/net/mac/tsch/tsch-slot-operation.c (lines ~774, ~984) 
+8. Algorithm 1 per-ASFN order: ASFN→CUSUM→game→schedule - tsch-schedule.c (lines 707–719)                                            
+9. Per-neighbor CUSUM/game state (Dₜ,S,μ,c,qᵢ,tokens) - os/net/ipv6/uip-ds6-nbr.h / .c (ease_demand/s/mu/cells/quota/tokens)       
+10. Per-link neighbor binding for time-varying reschedule  - os/net/mac/tsch/tsch-types.h (shared with ALICE)                         
+11. Downward traffic (root→device dedicated cells)  - orchestra-rule-ease.c (EASE_DOWNLINK_CELLS, fixed this session)
+12. Build gating / interface / tunables - os/net/mac/tsch/tsch-conf.h, os/net/mac/tsch/tsch-ease.h          
+
+
+For Cooja simulation wait for 15minutes, Run the example file present in - examples/rpl-udp-ease
