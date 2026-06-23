@@ -59,8 +59,7 @@
 #include <string.h>
 
 #ifdef EASE_MANAGEMENT
-/* EASE runs its CUSUM traffic predictor inline here (the same place the A3
- * reference keeps its EWMA), so it reaches the routing neighbor tables. */
+
 #include "net/ipv6/uip-ds6-route.h"
 #include "net/ipv6/uip-ds6-nbr.h"
 #endif /* EASE_MANAGEMENT */
@@ -119,8 +118,7 @@ tsch_schedule_remove_all_slotframes(void)
   }
   return 1;
 }
-/*---------------------------------------------------------------------------*/
-/* Removes a slotframe Return 1 if success, 0 if failure */
+
 int
 tsch_schedule_remove_slotframe(struct tsch_slotframe *slotframe)
 {
@@ -219,8 +217,7 @@ print_link_type(uint16_t link_type)
     return "?";
   }
 }
-/*---------------------------------------------------------------------------*/
-/* Adds a link to a slotframe, return a pointer to it (NULL if failure) */
+
 struct tsch_link *
 tsch_schedule_add_link(struct tsch_slotframe *slotframe,
                        uint8_t link_options, enum link_type link_type, const linkaddr_t *address,
@@ -237,10 +234,6 @@ tsch_schedule_add_link(struct tsch_slotframe *slotframe,
     }
 
     if(do_remove) {
-      /* Start with removing any link currently installed at this timeslot
-       * (needed to keep neighbor state in sync with link options etc.). We
-       * don't check for channel offset because only one link per timeslot
-       * is allowed in a given slotframe */
       l = tsch_schedule_get_link_by_timeslot(slotframe, timeslot);
       if(l != NULL) {
         tsch_schedule_remove_link(slotframe, l);
@@ -418,13 +411,7 @@ tsch_schedule_get_link_by_timeslot(struct tsch_slotframe *slotframe,
 }
 /*---------------------------------------------------------------------------*/
 #if TSCH_WITH_AUTONOMOUS
-/*---------------------------------------------------------------------------*/
-/* Shared support for the time-varying autonomous schedulers (ALICE/EASE).
- * Originally ported from the A3 codebase (https://github.com/skimskimskim/A3).
- * Compiles only under TSCH_WITH_ALICE || TSCH_WITH_EASE; with both disabled the
- * scheduler behaves exactly as upstream. */
 
-/* Absolute slotframe number bookkeeping (see tsch-alice.h). */
 uint16_t alice_curr_asfn = 0;
 uint16_t alice_next_asfn = 0;
 uint16_t alice_limit_asfn = 0;
@@ -484,12 +471,7 @@ tsch_schedule_add_link_alice(struct tsch_slotframe *slotframe,
 {
   struct tsch_link *l = NULL;
   if(slotframe != NULL) {
-    /* This runs from tsch_schedule_get_next_active_link, i.e. inside the slot
-     * operation (tsch_in_slot_operation == 1). Acquiring the TSCH lock here
-     * would busy-wait forever, so we deliberately operate lock-free. This is
-     * safe because the slot operation is the sole writer in this context.
-     * ALICE links always use the broadcast address for l->addr (shared links),
-     * so tsch_queue_get_nbr below hits the always-present broadcast neighbor. */
+
     l = memb_alloc(&link_memb);
     if(l == NULL) {
       LOG_ERR("! add_link_alice memb_alloc failed\n");
@@ -528,10 +510,7 @@ tsch_schedule_add_link_alice(struct tsch_slotframe *slotframe,
   }
   return l;
 }
-/*---------------------------------------------------------------------------*/
-/* Lock-free link removal used by the ALICE rule to clear the unicast slotframe
- * before rebuilding it. Like tsch_schedule_remove_link but without taking the
- * TSCH lock (see the rationale in tsch_schedule_add_link_alice). */
+
 int
 tsch_schedule_remove_link_alice(struct tsch_slotframe *slotframe, struct tsch_link *l)
 {
@@ -567,18 +546,12 @@ tsch_schedule_remove_link_alice(struct tsch_slotframe *slotframe, struct tsch_li
 uint16_t ease_curr_asfn = 0;
 
 #ifdef EASE_MANAGEMENT
-/* Child-side CUSUM state: this node's own predicted uplink demand to its parent.
- * ease_p_demand is incremented by tsch-slot-operation.c on each Tx to the parent;
- * the rest is private CUSUM state. */
+
 uint8_t ease_p_demand = 0;
 uint8_t ease_p_cells = 0;
 static double ease_p_s = 0;
 static double ease_p_mu = 0;
 
-/*---------------------------------------------------------------------------*/
-/* One CUSUM update (paper eqs 2-5) for a single link: given the demand D
- * observed over the interval, advance (S, mu) and return the new cell count c.
- * Resets the demand counter through its pointer. */
 static uint8_t
 ease_cusum_step(uint8_t *demand, double *s, double *mu)
 {
@@ -606,12 +579,7 @@ ease_cusum_step(uint8_t *demand, double *s, double *mu)
 void
 ease_cusum_recalculate(void)
 {
-  /* Parent link: this node's own uplink demand (packets delivered to the parent
-   * this interval). At low load this settles to ~1 cell, which is exactly right;
-   * the CUSUM ramps it up only under sustained high load. (Folding queue backlog
-   * in here was tried and reverted: on the autonomous hash-scheduled dedicated
-   * zone, extra cells from different links collide rather than add throughput, so
-   * inflating the count over-subscribes the zone and makes delivery worse.) */
+
   uint8_t old_p = ease_p_cells;
   ease_p_cells = ease_cusum_step(&ease_p_demand, &ease_p_s, &ease_p_mu);
   if(ease_p_cells != old_p) {
@@ -680,12 +648,7 @@ tsch_schedule_get_next_active_link(struct tsch_asn_t *asn, uint16_t *time_offset
     /* For each slotframe, look for the earliest occurring link */
     while(sf != NULL) {
 #if TSCH_WITH_ALICE
-      /* ALICE: rebuild the time-varying unicast schedule when the ASN crosses
-       * into a new absolute slotframe number (ASFN). The trigger is the
-       * ASN-derived ASFN, a global quantity, so every node transitions at the
-       * same ASN. This keeps a sender and its receiver on the same schedule, so
-       * their hashed cell positions always match (an earlier per-node trigger
-       * based on each node's last link desynchronized them, causing NoAcks). */
+
       if(sf->handle == ALICE_UNICAST_SF_ID) {
         uint16_t mod = TSCH_ASN_MOD(*asn, sf->size);
         struct tsch_asn_t newasn = *asn;
@@ -820,10 +783,7 @@ tsch_schedule_create_minimal(void)
   /* Build 6TiSCH minimal schedule.
    * We pick a slotframe length of TSCH_SCHEDULE_DEFAULT_LENGTH */
   sf_min = tsch_schedule_add_slotframe(0, TSCH_SCHEDULE_DEFAULT_LENGTH);
-  /* Add a single Tx|Rx|Shared slot using broadcast address (i.e. usable for unicast and broadcast).
-   * We set the link type to advertising, which is not compliant with 6TiSCH minimal schedule
-   * but is required according to 802.15.4e if also used for EB transmission.
-   * Timeslot: 0, channel offset: 0. */
+
   tsch_schedule_add_link(sf_min,
       (LINK_OPTION_RX | LINK_OPTION_TX | LINK_OPTION_SHARED | LINK_OPTION_TIME_KEEPING),
       LINK_TYPE_ADVERTISING, &tsch_broadcast_address,
