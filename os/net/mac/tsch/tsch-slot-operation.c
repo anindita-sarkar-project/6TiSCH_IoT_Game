@@ -163,9 +163,7 @@ uint8_t tsch_current_channel_offset;
 /* Info about the link, packet and neighbor of
  * the current (or next) slot */
 struct tsch_link *current_link = NULL;
-/* A backup link with Rx flag, overlapping with current_link.
- * If the current link is Tx-only and the Tx queue
- * is empty while executing the link, fallback to the backup link. */
+
 static struct tsch_link *backup_link = NULL;
 static struct tsch_packet *current_packet = NULL;
 static struct tsch_neighbor *current_neighbor = NULL;
@@ -260,14 +258,7 @@ tsch_get_channel_offset(struct tsch_link *link, struct tsch_packet *p)
   return link->channel_offset;
 }
 
-/**
- * Returns a 802.15.4 channel from an ASN and channel offset. Basically adds
- * The offset to the ASN and performs a hopping sequence lookup.
- *
- * \param asn A given ASN
- * \param channel_offset Given channel offset
- * \return The resulting channel
- */
+
 static uint8_t
 tsch_calculate_channel(struct tsch_asn_t *asn, uint16_t channel_offset)
 {
@@ -277,11 +268,7 @@ tsch_calculate_channel(struct tsch_asn_t *asn, uint16_t channel_offset)
   return tsch_hopping_sequence[index_of_offset];
 }
 
-/*---------------------------------------------------------------------------*/
-/* Timing utility functions */
 
-/* Checks if the current time has passed a ref time + offset. Assumes
- * a single overflow and ref time prior to now. */
 static uint8_t
 check_timer_miss(rtimer_clock_t ref_time, rtimer_clock_t offset, rtimer_clock_t now)
 {
@@ -300,10 +287,7 @@ check_timer_miss(rtimer_clock_t ref_time, rtimer_clock_t offset, rtimer_clock_t 
     return now_has_overflowed;
   }
 }
-/*---------------------------------------------------------------------------*/
-/* Schedule a wakeup at a specified offset from a reference time.
- * Provides basic protection against missed deadlines and timer overflows
- * A return value of zero signals a missed deadline: no rtimer was scheduled. */
+
 static uint8_t
 tsch_schedule_slot_operation(struct rtimer *tm, rtimer_clock_t ref_time, rtimer_clock_t offset, const char *str)
 {
@@ -330,10 +314,7 @@ tsch_schedule_slot_operation(struct rtimer *tm, rtimer_clock_t ref_time, rtimer_
   RTIMER_BUSYWAIT_UNTIL_ABS(0, ref_time, offset);
   return 0;
 }
-/*---------------------------------------------------------------------------*/
-/* Schedule slot operation conditionally, and YIELD if success only.
- * Always attempt to schedule RTIMER_GUARD before the target to make sure to wake up
- * ahead of time and then busy wait to exactly hit the target. */
+
 #define TSCH_SCHEDULE_AND_YIELD(pt, tm, ref_time, offset, str) \
   do { \
     if(tsch_schedule_slot_operation(tm, ref_time, offset - RTIMER_GUARD, str)) { \
@@ -341,12 +322,7 @@ tsch_schedule_slot_operation(struct rtimer *tm, rtimer_clock_t ref_time, rtimer_
     } \
     RTIMER_BUSYWAIT_UNTIL_ABS(0, ref_time, offset); \
   } while(0);
-/*---------------------------------------------------------------------------*/
-/*
- * Check whether the current channel is in the join hopping sequence.
- * If a custom join hopping sequence is defined, EB packets are only
- * sent using that sequence.
- */
+
 static uint8_t
 is_current_channel_in_join_sequence(struct tsch_link *link)
 {
@@ -445,14 +421,7 @@ tsch_get_network_uptime_ticks(void)
 
   return uptime_ticks;
 }
-/*---------------------------------------------------------------------------*/
-/**
- * This function turns on the radio. Its semantics is dependent on
- * the value of TSCH_RADIO_ON_DURING_TIMESLOT constant:
- * - if enabled, the radio is turned on at the start of the slot
- * - if disabled, the radio is turned on within the slot,
- *   directly before the packet Rx guard time and ACK Rx guard time.
- */
+
 static void
 tsch_radio_on(enum tsch_radio_state_on_cmd command)
 {
@@ -476,14 +445,7 @@ tsch_radio_on(enum tsch_radio_state_on_cmd command)
     NETSTACK_RADIO.on();
   }
 }
-/*---------------------------------------------------------------------------*/
-/**
- * This function turns off the radio. In the same way as for tsch_radio_on(),
- * it depends on the value of TSCH_RADIO_ON_DURING_TIMESLOT constant:
- * - if enabled, the radio is turned off at the end of the slot
- * - if disabled, the radio is turned off within the slot,
- *   directly after Tx'ing or Rx'ing a packet or Tx'ing an ACK.
- */
+
 static void
 tsch_radio_off(enum tsch_radio_state_off_cmd command)
 {
@@ -511,18 +473,7 @@ tsch_radio_off(enum tsch_radio_state_off_cmd command)
 static
 PT_THREAD(tsch_tx_slot(struct pt *pt, struct rtimer *t))
 {
-  /**
-   * TX slot:
-   * 1. Copy packet to radio buffer
-   * 2. Perform CCA if enabled
-   * 3. Sleep until it is time to transmit
-   * 4. Wait for ACK if it is a unicast packet
-   * 5. Extract drift if we received an E-ACK from a time source neighbor
-   * 6. Update CSMA parameters according to TX status
-   * 7. Schedule mac_call_sent_callback
-   **/
 
-  /* tx status */
   static uint8_t mac_tx_status;
   /* is the packet in its neighbor's queue? */
   uint8_t in_queue;
@@ -822,14 +773,7 @@ PT_THREAD(tsch_tx_slot(struct pt *pt, struct rtimer *t))
 static
 PT_THREAD(tsch_rx_slot(struct pt *pt, struct rtimer *t))
 {
-  /**
-   * RX slot:
-   * 1. Check if it is used for TIME_KEEPING
-   * 2. Sleep and wake up just before expected RX time (with a guard time: TS_LONG_GT)
-   * 3. Check for radio activity for the guard time: TS_LONG_GT
-   * 4. Prepare and send ACK if needed
-   * 5. Drift calculated in the ACK callback registered with the radio driver. Use it if receiving from a time source neighbor.
-   **/
+
 
   struct tsch_neighbor *n;
   static linkaddr_t source_address;
@@ -837,8 +781,7 @@ PT_THREAD(tsch_rx_slot(struct pt *pt, struct rtimer *t))
   static int16_t input_index;
   static int input_queue_drop = 0;
 #ifdef A3_MANAGEMENT
-  /* A3 Rx outcome for this cell: 0 = idle, 1 = success, 2 = others, 3 = collision.
-   * Static so it survives the protothread yields below. */
+
   static uint8_t a3_rx_result;
   static int a3_src_valid;
   a3_rx_result = 0;
@@ -1008,17 +951,7 @@ PT_THREAD(tsch_rx_slot(struct pt *pt, struct rtimer *t))
 #endif
 
 #ifdef EASE_MANAGEMENT
-            /* EASE token bucket (paper eq 17): when a child exceeds its quota we
-             * still ACK it, but set the NACK bit as the congestion signal. We
-             * must NOT withhold the ACK outright: in TSCH a missing ACK is a
-             * transmission failure, so the child retransmits the same frame (up
-             * to TSCH_MAC_MAX_FRAME_RETRIES). Under load that turns every
-             * over-quota packet into a retransmission storm which fills the
-             * child's queue (the "queue 63/64 / add packet failed" symptom),
-             * delivers duplicates, and starves RPL control traffic so the DAG
-             * never stabilises and nodes stay "Not reachable". A NACK'd EACK lets
-             * the child dequeue the frame (no storm) while still signalling
-             * congestion. */
+
             if(current_link != NULL && current_link->slotframe_handle == EASE_SF_ID
                && frame.fcf.frame_type == FRAME802154_DATAFRAME
                && frame.fcf.ack_required
@@ -1129,9 +1062,7 @@ PT_THREAD(tsch_rx_slot(struct pt *pt, struct rtimer *t))
 
   PT_END(pt);
 }
-/*---------------------------------------------------------------------------*/
-/* Protothread for slot operation, called from rtimer interrupt
- * and scheduled from tsch_schedule_slot_operation */
+
 static
 PT_THREAD(tsch_slot_operation(struct rtimer *t, void *ptr))
 {
@@ -1165,9 +1096,7 @@ PT_THREAD(tsch_slot_operation(struct rtimer *t, void *ptr))
       current_packet = get_packet_and_neighbor_for_link(current_link, &current_neighbor);
       uint8_t do_skip_best_link = 0;
       if(current_packet == NULL && backup_link != NULL) {
-        /* There is no packet to send, and this link does not have Rx flag. Instead of doing
-         * nothing, switch to the backup link (has Rx flag) if any
-         * and if the current link cannot Rx or both links can Rx, but the backup link has priority. */
+
         if(!(current_link->link_options & LINK_OPTION_RX)
             || backup_link->slotframe_handle < current_link->slotframe_handle) {
           do_skip_best_link = 1;
@@ -1199,11 +1128,7 @@ PT_THREAD(tsch_slot_operation(struct rtimer *t, void *ptr))
         /* Decide whether it is a TX/RX/IDLE or OFF slot */
         /* Actual slot operation */
         if(current_packet != NULL) {
-          /* We have something to transmit, do the following:
-           * 1. send
-           * 2. update_backoff_state(current_neighbor)
-           * 3. post tx callback
-           **/
+
           static struct pt slot_tx_pt;
           PT_SPAWN(&slot_operation_pt, &slot_tx_pt, tsch_tx_slot(&slot_tx_pt, t));
         } else {
@@ -1222,8 +1147,7 @@ PT_THREAD(tsch_slot_operation(struct rtimer *t, void *ptr))
     /* End of slot operation, schedule next slot or resynchronize */
 
     if(tsch_is_coordinator) {
-      /* Update the `last_sync_*` variables to avoid large errors
-       * in the application-level time synchronization */
+
       last_sync_asn = tsch_current_asn;
       tsch_last_sync_time = clock_time();
     }
@@ -1238,8 +1162,7 @@ PT_THREAD(tsch_slot_operation(struct rtimer *t, void *ptr))
       );
       tsch_disassociate();
     } else {
-      /* backup of drift correction for printing debug messages */
-      /* int32_t drift_correction_backup = drift_correction; */
+
       uint16_t timeslot_diff = 0;
       rtimer_clock_t prev_slot_start;
       /* Time to next wake up */
