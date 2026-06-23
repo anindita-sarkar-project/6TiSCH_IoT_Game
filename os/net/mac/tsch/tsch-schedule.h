@@ -92,116 +92,52 @@ int tsch_schedule_remove_slotframe(struct tsch_slotframe *slotframe);
  */
 int tsch_schedule_remove_all_slotframes(void);
 
-/**
- * \brief Adds a link to a slotframe
- * \param slotframe The slotframe that will contain the new link
- * \param link_options The link options, as a bitfield (LINK_OPTION_* flags)
- * \param link_type The link type (advertising, normal)
- * \param address The link address of the intended destination. Use &tsch_broadcast_address for a slot towards any neighbor
- * \param timeslot The link timeslot within the slotframe
- * \param channel_offset The link channel offset
- * \param do_remove Whether to remove an old link at this timeslot and channel offset
- * \return A pointer to the new link, NULL if failure
- */
 struct tsch_link *tsch_schedule_add_link(struct tsch_slotframe *slotframe,
                                          uint8_t link_options, enum link_type link_type, const linkaddr_t *address,
                                          uint16_t timeslot, uint16_t channel_offset, uint8_t do_remove);
-/**
-* \brief Looks for a link from a handle
-* \param handle The target handle
-* \return The link with required handle, if any. Otherwise, NULL
-*/
+
 struct tsch_link *tsch_schedule_get_link_by_handle(uint16_t handle);
 
-/**
- * \brief Looks within a slotframe for a link with a given timeslot and channel offset
- * \param slotframe The desired slotframe
- * \param timeslot The desired timeslot
- * \param channel_offset The desired channel offset 
- * \return The link if found, NULL otherwise
- */
+
 struct tsch_link *tsch_schedule_get_link_by_offsets(struct tsch_slotframe *slotframe,
                                                     uint16_t timeslot, uint16_t channel_offset);
 
-/**
- * \brief Looks within a slotframe for a link with a given timeslot
- * \param slotframe The desired slotframe
- * \param timeslot The desired timeslot
- * \return The link if found, NULL otherwise
- */
+
 struct tsch_link *tsch_schedule_get_link_by_timeslot(struct tsch_slotframe *slotframe,
                                                      uint16_t timeslot);
 
-/**
- * \brief Removes a link
- * \param slotframe The slotframe the link belongs to
- * \param l The link to be removed
- * \return 1 if success, 0 if failure
- */
+
 int tsch_schedule_remove_link(struct tsch_slotframe *slotframe, struct tsch_link *l);
 
-/**
- * \brief Removes a link from a slotframe and timeslot + channel offset
- * \param slotframe The slotframe where to look for the link
- * \param timeslot The timeslot where to look for the link within the target slotframe
- * \param channel_offset The channel offset where to look for the link within the target slotframe
- * \return 1 if success, 0 if failure
- */
 int tsch_schedule_remove_link_by_offsets(struct tsch_slotframe *slotframe,
                                          uint16_t timeslot, uint16_t channel_offset);
 
-/**
- * \brief Returns the next active link after a given ASN, and a backup link (for the same ASN, with Rx flag)
- * \param asn The base ASN, from which we look for the next active link
- * \param time_offset A pointer to uint16_t where to store the time offset between base ASN and link found
- * \param backup_link A pointer where to write the address of a backup link, to be executed should the original be no longer active at wakeup
- * \return The next active link if any, NULL otherwise
- */
+
 struct tsch_link * tsch_schedule_get_next_active_link(struct tsch_asn_t *asn, uint16_t *time_offset,
     struct tsch_link **backup_link);
 
-/**
- * \brief Access the first item in the list of slotframes
- * \return The first slotframe in the schedule if any, NULL otherwise
- */
+
 struct tsch_slotframe *tsch_schedule_slotframe_head(void);
 
-/**
- * \brief Access the next item in the list of slotframes
- * \param sf The current slotframe (item in the list)
- * \return The next slotframe if any, NULL otherwise
- */
+
 struct tsch_slotframe *tsch_schedule_slotframe_next(struct tsch_slotframe *sf);
 
 #if TSCH_WITH_AUTONOMOUS
-/**
- * \brief Autonomous-scheduler integer hash mapping a (link, ASFN) value onto
- *        [0, mod). Shared by ALICE and EASE.
- */
+
 uint16_t real_hash5(uint32_t value, uint16_t mod);
 
-/**
- * \brief ALICE variant of tsch_schedule_add_link that also records the RPL
- *        neighbor the link serves and merges options with co-located links.
- * \param neighbor The RPL neighbor (parent/child) this link is scheduled for
- */
+
 struct tsch_link *tsch_schedule_add_link_alice(struct tsch_slotframe *slotframe,
                                                uint8_t link_options, enum link_type link_type,
                                                const linkaddr_t *address, const linkaddr_t *neighbor,
                                                uint16_t timeslot, uint16_t channel_offset);
 
-/**
- * \brief Merge link_options into any link already installed at the given
- *        timeslot and channel offset within a slotframe.
- */
+
 struct tsch_link *tsch_schedule_set_link_option_by_offsets(struct tsch_slotframe *slotframe,
                                                            uint16_t timeslot, uint16_t channel_offset,
                                                            uint8_t *link_options);
 
-/**
- * \brief Lock-free link removal for the ALICE rule, callable from within the
- *        slot operation. Returns 1 on success, 0 on failure.
- */
+
 int tsch_schedule_remove_link_alice(struct tsch_slotframe *slotframe, struct tsch_link *l);
 #endif /* TSCH_WITH_AUTONOMOUS */
 
