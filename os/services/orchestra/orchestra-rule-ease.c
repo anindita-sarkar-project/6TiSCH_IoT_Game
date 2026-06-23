@@ -1,45 +1,4 @@
-/*
- * Copyright (c) 2024.
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the copyright holders nor the names of its
- *    contributors may be used to endorse or promote products derived from
- *    this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
- * DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE.
- */
 
-/**
- * \file
- *         EASE: Energy-Aware Autonomous Scheduling, a two-zone autonomous
- *         6TiSCH scheduler. The unicast slotframe of length SF is split into:
- *           - Zone 1 (timeslots [0, SF_s)): shared cells. A node's shared cell
- *             towards a parent P is hash(P, ASFN); the parent listens there and
- *             all of P's children contend (CSMA) to send their first packet.
- *           - Zone 2 (timeslots [SF_s, SF)): dedicated cells. A child-parent
- *             pair (P, C) gets cells at hash(alpha*(P,C) + i + ASFN) for
- *             additional packets.
- *         The schedule is time-varying: rebuilt every absolute slotframe number
- *         (ASFN), reusing the TSCH-core autonomous-scheduling machinery.
- *
- *         This file implements the SCHEDULING (cell placement). The CUSUM
- *         traffic prediction (how many dedicated cells per child) is added
- *         inline in tsch-schedule.c, and the game-theoretic budget allocation /
- *         token-bucket congestion control in tsch-packet.c (later phases). For
- *         now a fixed baseline of one dedicated cell per neighbour is used.
- *
- *         Designed for RPL storing mode (needs knowledge of children).
- */
 
 #include "contiki.h"
 #include "orchestra.h"
@@ -59,17 +18,12 @@
 
 #if TSCH_WITH_EASE && (UIP_MAX_ROUTES != 0)
 
-/* Total unicast slotframe length SF, and the shared / dedicated zone split.
- * SF = SF_s + SF_x. By default the slotframe is divided into two equal zones. */
 #define EASE_SF              ORCHESTRA_UNICAST_PERIOD
 #define EASE_SHARED_LEN      (EASE_SF / 2)               /* SF_s, zone 1 */
 #define EASE_DEDICATED_LEN   (EASE_SF - EASE_SHARED_LEN) /* SF_x, zone 2 */
 
-/* Baseline number of dedicated cells per neighbour (replaced by the CUSUM /
- * game-theoretic count in later phases). */
 #define EASE_BASELINE_DEDICATED 1
 
-/* Absolute slotframe number currently used to derive the schedule. */
 static uint16_t asfn_schedule = 0;
 
 static uint16_t slotframe_handle = 0;
@@ -78,8 +32,6 @@ static struct tsch_slotframe *sf_unicast;
 static const uint8_t link_option_rx = LINK_OPTION_RX;
 static const uint8_t link_option_tx = LINK_OPTION_TX | LINK_OPTION_SHARED;
 
-/*---------------------------------------------------------------------------*/
-/* Hash of a single node address (stands in for hash(EUI64)). */
 static uint32_t
 ease_addr_hash(const linkaddr_t *a)
 {
@@ -90,7 +42,7 @@ ease_addr_hash(const linkaddr_t *a)
   }
   return h;
 }
-/*---------------------------------------------------------------------------*/
+
 static uint16_t
 ease_channel_offset(uint32_t h)
 {
@@ -104,8 +56,7 @@ ease_channel_offset(uint32_t h)
   return 1 + real_hash5(h, num_ch);
 #endif
 }
-/*---------------------------------------------------------------------------*/
-/* Shared cell (zone 1) towards parent P: timeslot in [0, SF_s). */
+
 static uint16_t
 ease_shared_timeslot(const linkaddr_t *parent)
 {
@@ -116,10 +67,7 @@ ease_shared_choff(const linkaddr_t *parent)
 {
   return ease_channel_offset(ease_addr_hash(parent) + (uint32_t)asfn_schedule);
 }
-/*---------------------------------------------------------------------------*/
-/* Dedicated cell (zone 2) for the directed pair (parent P, child C), packet
- * index i: timeslot in [SF_s, SF). Both endpoints compute it with P first and C
- * second, so sender and receiver agree. */
+
 static uint16_t
 ease_dedicated_timeslot(const linkaddr_t *p, const linkaddr_t *c, uint8_t i)
 {
@@ -146,43 +94,13 @@ is_root(void)
   }
   return 0;
 }
-/*---------------------------------------------------------------------------*/
-/* Number of dedicated cells this node should keep for a neighbour. With
- * EASE_MANAGEMENT this is the CUSUM-predicted count: our own predicted uplink
- * demand for the parent, or the demand we estimate from a child. Without it,
- * a fixed baseline is used. */
-static uint8_t
+
 ease_num_dedicated(const linkaddr_t *neighbor)
 {
 #ifdef EASE_MANAGEMENT
   if(linkaddr_cmp(neighbor, &orchestra_parent_linkaddr)) {
-    /* Uplink: schedule Tx on our own predicted demand for the parent, but keep
-     * at least one dedicated cell. The dedicated hash mixes in our own address,
-     * so every child of the same parent gets a DISTINCT slot; the single shared
-     * cell (hash of the parent alone) is the same slot for all siblings, so at
-     * low load -- one packet per slotframe, always a "first" packet -- every
-     * child would pile that packet onto the one shared cell and collide every
-     * slotframe. Guaranteeing one dedicated cell gives each child a private,
-     * collision-free slot from the first packet. */
-    /* Floor of 2: with a single dedicated cell the only collision-free uplink
-     * opportunity per slotframe is that one ASFN-varying slot, which intermittently
-     * collides with a sibling's slot (zone-2 birthday collision). The shared cell
-     * is no help at steady state (every child emits one packet per slotframe, so it
-     * is a guaranteed N-way collision every frame). One cell therefore gives
-     * throughput just under the 1 pkt/slotframe arrival rate, with no slack to
-     * recover, so the queue drifts to full and never drains. Two cells push
-     * throughput clearly above arrival: a child only stalls if BOTH its slots
-     * collide in the same frame (rare), so backlogs drain. */
     return ease_p_cells > 2 ? ease_p_cells : 2;
   }
-  /* Downlink (parent role): schedule Rx cells for a child. The child sizes its
-   * Tx cells from its OWN CUSUM (what it sends); we size our Rx from a DIFFERENT
-   * CUSUM (what we receive). Those two predictors observe different things, so
-   * without headroom they deadlock: we won't open an Rx cell until we receive
-   * more, but the child can't deliver more until we open the Rx cell, pinning us
-   * at ~1 cell while the child piles up Tx cells (the "queue 63/64" overflow).
-   * Listening on a few cells beyond our current estimate lets the child ramp and
-   * the two counts converge upward (bounded by EASE_MAX_DEDICATED / the zone). */
   uip_ds6_nbr_t *it = uip_ds6_nbr_ll_lookup((const uip_lladdr_t *)neighbor);
   if(it == NULL) {
     return 0;
@@ -197,15 +115,10 @@ ease_num_dedicated(const linkaddr_t *neighbor)
   return EASE_BASELINE_DEDICATED;
 #endif
 }
-/*---------------------------------------------------------------------------*/
-/* Rebuild the whole EASE slotframe for the current ASFN. Runs inside the slot
- * operation, so uses the lock-free schedule helpers. */
 static void
 ease_schedule_unicast_slotframe(void)
 {
   uint8_t i;
-
-  /* Remove all links currently in the EASE slotframe. */
   struct tsch_link *l = list_head(sf_unicast->links_list);
   while(l != NULL) {
     tsch_schedule_remove_link_alice(sf_unicast, l);
@@ -213,21 +126,16 @@ ease_schedule_unicast_slotframe(void)
   }
 
   if(is_root() != 1) {
-    /* Child role: cells towards our preferred parent. */
     const linkaddr_t *parent = &orchestra_parent_linkaddr;
-    /* Zone 1: one shared Tx cell (first packet, CSMA). */
     tsch_schedule_add_link_alice(sf_unicast, link_option_tx, LINK_TYPE_NORMAL,
                                  &tsch_broadcast_address, parent,
                                  ease_shared_timeslot(parent), ease_shared_choff(parent));
-    /* Zone 2: dedicated Tx cells (additional packets). Uplink slot hash(P,C). */
     for(i = 0; i < ease_num_dedicated(parent); i++) {
       tsch_schedule_add_link_alice(sf_unicast, link_option_tx, LINK_TYPE_NORMAL,
                                    &tsch_broadcast_address, parent,
                                    ease_dedicated_timeslot(parent, &linkaddr_node_addr, i),
                                    ease_dedicated_choff(parent, &linkaddr_node_addr, i));
     }
-    /* Zone 2: dedicated Rx cells to receive downlink from the parent. The
-     * downlink slot is the swapped hash(C,P), distinct from the uplink slot. */
     for(i = 0; i < EASE_DOWNLINK_CELLS; i++) {
       tsch_schedule_add_link_alice(sf_unicast, link_option_rx, LINK_TYPE_NORMAL,
                                    &tsch_broadcast_address, parent,
@@ -236,10 +144,7 @@ ease_schedule_unicast_slotframe(void)
     }
   }
 
-  /* Parent role: cells towards our children (route next hops). */
   if(nbr_table_head(nbr_routes) != NULL) {
-    /* Zone 1: one shared Rx cell, shared by all our children
-     * (hash of our own address == each child's shared-Tx cell). */
     tsch_schedule_add_link_alice(sf_unicast, link_option_rx, LINK_TYPE_NORMAL,
                                  &tsch_broadcast_address, &linkaddr_node_addr,
                                  ease_shared_timeslot(&linkaddr_node_addr),
@@ -249,17 +154,12 @@ ease_schedule_unicast_slotframe(void)
   while(item != NULL) {
     linkaddr_t *child = nbr_table_get_lladdr(nbr_routes, item);
     if(child != NULL) {
-      /* Zone 2: dedicated Rx cells to receive uplink from this child. Uplink
-       * slot hash(P,C). */
       for(i = 0; i < ease_num_dedicated(child); i++) {
         tsch_schedule_add_link_alice(sf_unicast, link_option_rx, LINK_TYPE_NORMAL,
                                      &tsch_broadcast_address, child,
                                      ease_dedicated_timeslot(&linkaddr_node_addr, child, i),
                                      ease_dedicated_choff(&linkaddr_node_addr, child, i));
       }
-      /* Zone 2: dedicated Tx cells to send downlink to this child. The downlink
-       * slot is the swapped hash(C,P), distinct from the uplink slot, and the
-       * child listens on exactly these same EASE_DOWNLINK_CELLS slots. */
       for(i = 0; i < EASE_DOWNLINK_CELLS; i++) {
         tsch_schedule_add_link_alice(sf_unicast, link_option_tx, LINK_TYPE_NORMAL,
                                      &tsch_broadcast_address, child,
@@ -285,12 +185,6 @@ ease_callback_packet_selection(uint16_t *ts, uint16_t *choff, const linkaddr_t *
   uint16_t cur_choff = *choff;
   uint8_t i;
 
-  /* Destination is our preferred parent: try our Tx cells towards it. Prefer
-   * the dedicated cells -- each child of a parent hashes to a DISTINCT dedicated
-   * slot, so siblings never collide. The shared cell (one slot per parent, every
-   * child hashes to it) is only a bootstrap fallback for when we have no
-   * dedicated cell yet; matching it first would funnel every sibling's packet
-   * onto the same slot and collide every slotframe. */
   if(linkaddr_cmp(&orchestra_parent_linkaddr, rx_lladdr)) {
     uint8_t nd = ease_num_dedicated(rx_lladdr);
     for(i = 0; i < nd; i++) {
@@ -301,16 +195,12 @@ ease_callback_packet_selection(uint16_t *ts, uint16_t *choff, const linkaddr_t *
       }
     }
     if(nd == 0) {
-      /* No dedicated cell yet: fall back to the shared cell. */
       *ts = ease_shared_timeslot(rx_lladdr);
       *choff = ease_shared_choff(rx_lladdr);
     }
     return 1;
   }
 
-  /* Destination is one of our children: send downlink on the swapped-hash
-   * slot hash(C,P) where the child is listening (NOT the uplink slot hash(P,C),
-   * where we only have an Rx link). */
   if(nbr_table_get_from_lladdr(nbr_routes, rx_lladdr) != NULL) {
     for(i = 0; i < EASE_DOWNLINK_CELLS; i++) {
       *ts = ease_dedicated_timeslot(rx_lladdr, &linkaddr_node_addr, i);
