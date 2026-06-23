@@ -54,8 +54,7 @@
 #include "net/mac/tsch/tsch-ease.h"
 
 #ifdef EASE_MANAGEMENT
-/* EASE keeps its game-theoretic allocation and the token-bucket congestion
- * control inline here (the ACK-build path), so it sits with the EACK logic. */
+
 #include "net/ipv6/uip-ds6-route.h"
 #include "net/ipv6/uip-ds6-nbr.h"
 #endif /* EASE_MANAGEMENT */
@@ -65,17 +64,7 @@
 #define LOG_MODULE "TSCH Pkt"
 #define LOG_LEVEL LOG_LEVEL_MAC
 
-/*
- * We use a local packetbuf_attr array to collect necessary frame settings to
- * create an EACK because EACK is generated in the interrupt context where
- * packetbuf and packetbuf_attrs[] may be in use for another purpose.
- *
- * We have accessors of eackbuf_attrs: tsch_packet_eackbuf_set_attr() and
- * tsch_packet_eackbuf_attr(). For some platform, they might need to be
- * implemented as inline functions. However, for now, we don't provide the
- * inline option. Such an optimization is left to the compiler for a target
- * platform.
- */
+
 static struct packetbuf_attr eackbuf_attrs[PACKETBUF_NUM_ATTRS];
 
 /* The offset of the frame pending bit flag within the first byte of FCF */
@@ -368,11 +357,6 @@ tsch_packet_create_eb(uint8_t *hdr_len, uint8_t *tsch_sync_ie_offset)
     *hdr_len = packetbuf_hdrlen();
   }
 
-  /*
-   * Save the offset of the TSCH Synchronization IE, which is expected to be
-   * located just after the Payload IE header, needed to update ASN and join
-   * priority before sending.
-   */
   if(tsch_sync_ie_offset != NULL) {
     *tsch_sync_ie_offset = packetbuf_hdrlen() + payload_ie_hdr_len;
   }
@@ -472,16 +456,7 @@ tsch_packet_get_frame_pending(uint8_t *buf, int buf_size)
 }
 /*---------------------------------------------------------------------------*/
 #ifdef EASE_MANAGEMENT
-/*---------------------------------------------------------------------------*/
-/* EASE game-theoretic RDC-budget allocation (paper eqs 6-17).
- *
- * The parent has an RX budget B = round(delta * SF) cells/slotframe. Each child
- * Ci has a priority weight wi (>=1; here derived from the child's node id, but
- * normally pre-assigned). The non-cooperative game has the unique Nash
- * equilibrium ki* = wi/lambda - 1 with lambda* = (sum wi)/(B + M), where M is
- * the number of children. We round/bound to an integer quota qi, then seed each
- * child's per-slotframe token bucket with max(qi, Pi) (Pi = CUSUM-predicted
- * demand ease_cells) when sum qi <= B, else min(qi, Pi). */
+
 void
 ease_game_recompute(void)
 {
