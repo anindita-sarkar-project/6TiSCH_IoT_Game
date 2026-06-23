@@ -24,18 +24,14 @@ Find out more:
 
 Paper → file mapping (every component accounted for)
 
-1. Zone 1 shared cell hash T_b, C_b = hash(EUI64(P)+ASFN) - os/services/orchestra/orchestra-rule-ease.c (ease_shared_timeslot/choff)    
-2. Zone 2 dedicated cell hash T_slot,C_ch = α·hash(P+C)+i+ASFN - orchestra-rule-ease.c (ease_dedicated_timeslot/choff)       
-3. Two-zone slotframe split SF = SF_s + SF_x, equal halves - orchestra-rule-ease.c (EASE_SHARED_LEN, EASE_DEDICATED_LEN)   
-4. CUSUM predictor z, S, μ, c=round([μ]₊) - os/net/mac/tsch/tsch-schedule.c (ease_cusum_step, ease_cusum_recalculate) 
-5. Game-theoretic allocation - os/net/mac/tsch/tsch-packet.c (ease_game_recompute) 
-6. Token bucket tokens=max/min(qᵢ,Pᵢ) + congestion ACK eq 17, Sec. G - tsch-packet.c (ease_token_consume) + tsch-slot-operation.c (NACK signaling)
-7. Demand counting Dₜ (uplink Tx delivered, Rx from child) - os/net/mac/tsch/tsch-slot-operation.c (lines ~774, ~984) 
-8. Algorithm 1 per-ASFN order: ASFN→CUSUM→game→schedule - tsch-schedule.c (lines 707–719)                                            
-9. Per-neighbor CUSUM/game state (Dₜ,S,μ,c,qᵢ,tokens) - os/net/ipv6/uip-ds6-nbr.h / .c (ease_demand/s/mu/cells/quota/tokens)       
-10. Per-link neighbor binding for time-varying reschedule  - os/net/mac/tsch/tsch-types.h (shared with ALICE)                         
-11. Downward traffic (root→device dedicated cells)  - orchestra-rule-ease.c (EASE_DOWNLINK_CELLS, fixed this session)
-12. Build gating / interface / tunables - os/net/mac/tsch/tsch-conf.h, os/net/mac/tsch/tsch-ease.h          
+1. Zone 1  and 2 hash - os/services/orchestra/orchestra-rule-ease.c 
+2. CUSUM predictor - os/net/mac/tsch/tsch-schedule.c
+3. Game-theoretic allocation - os/net/mac/tsch/tsch-packet.c (ease_game_recompute) 
+4. Token bucket - tsch-packet.c (ease_token_consume) + tsch-slot-operation.c (NACK signaling)
+5. Demand counting Dₜ - os/net/mac/tsch/tsch-slot-operation.c
+6. Algorithm 1 - tsch-schedule.c (lines 707–719)                                            
+7. Per-neighbor CUSUM/game state - os/net/ipv6/uip-ds6-nbr.h / .c (ease_demand/s/mu/cells/quota/tokens)       
+8. Per-link neighbor binding for time-varying reschedule  - os/net/mac/tsch/tsch-types.h (shared with ALICE)                         
+9. Downward traffic (root→device dedicated cells)  - orchestra-rule-ease.c (EASE_DOWNLINK_CELLS, fixed this session)     
 
-
-For Cooja simulation wait for 15minutes, Run the example file present in - examples/rpl-udp-ease
+Example file present in - examples/rpl-udp-ease
